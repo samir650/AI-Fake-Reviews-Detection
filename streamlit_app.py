@@ -50,6 +50,7 @@ st.markdown("""
         padding: 1rem;
         margin: 1rem 0;
         background-color: #fafafa;
+        color: #000000 !important;  /* لون نص أسود */
     }
     .metric-card {
         background: white;
@@ -61,10 +62,12 @@ st.markdown("""
     .fake-review {
         border-left: 5px solid #ff4b4b;
         background-color: #fff5f5;
+        color: #000000 !important;  /* لون نص أسود */
     }
     .real-review {
         border-left: 5px solid #00c851;
         background-color: #f5fff5;
+        color: #000000 !important;  /* لون نص أسود */
     }
 </style>
 """, unsafe_allow_html=True)
@@ -81,43 +84,12 @@ st.markdown("""
 # Initialize session state
 if 'detector' not in st.session_state:
     st.session_state.detector = None
-if 'api_status' not in st.session_state:
-    st.session_state.api_status = False
 if 'analysis_history' not in st.session_state:
     st.session_state.analysis_history = []
 
 # Sidebar configuration
 st.sidebar.title("⚙️ Configuration")
 st.sidebar.markdown("---")
-
-# API Key Management
-with st.sidebar.expander("🔑 API Configuration", expanded=True):
-    # Try environment variable first
-    default_api_key = os.getenv("GROQ_API_KEY", "")
-    
-    api_key = st.text_input(
-        "Groq API Key",
-        value=default_api_key,
-        type="password",
-        help="Get your API key from https://console.groq.com"
-    )
-    
-    if st.button("🔗 Test API Connection"):
-        if api_key:
-            try:
-                with st.spinner("Testing connection..."):
-                    client = GroqClient(api_key)
-                    if client.test_connection():
-                        st.success("✅ API connection successful!")
-                        st.session_state.api_status = True
-                    else:
-                        st.error("❌ API connection failed!")
-                        st.session_state.api_status = False
-            except Exception as e:
-                st.error(f"❌ Connection error: {str(e)}")
-                st.session_state.api_status = False
-        else:
-            st.warning("Please enter your API key first")
 
 # Model Configuration
 with st.sidebar.expander("🤖 Model Settings"):
@@ -159,16 +131,15 @@ with st.sidebar.expander("📊 Dataset Management"):
         except Exception as e:
             st.error(f"Error loading dataset: {str(e)}")
 
+# Set the API key directly in the code (replace with your actual Groq API key)
+API_KEY = "Insert Your Groq API key"  # غيرها بمفتاحك الحقيقي
+
 # Initialize detector
 def initialize_detector():
     """Initialize the RAG detector with knowledge base"""
-    if not api_key:
-        st.error("Please provide a valid API key")
-        return None
-    
     try:
-        # Initialize Groq client
-        client = GroqClient(api_key)
+        # Initialize Groq client with fixed API key
+        client = GroqClient(API_KEY)
         
         # Load or create knowledge base
         kb_path = "knowledge_base.pkl"
@@ -234,8 +205,6 @@ with tab1:
         if st.button("🔍 Analyze Review", type="primary", use_container_width=True):
             if not review_text.strip():
                 st.warning("Please enter a review to analyze")
-            elif not api_key:
-                st.error("Please provide your Groq API key in the sidebar")
             else:
                 # Initialize detector if not already done
                 if st.session_state.detector is None:
@@ -362,103 +331,100 @@ with tab2:
             )
             
             if st.button("🔍 Analyze Batch", type="primary"):
-                if not api_key:
-                    st.error("Please provide your Groq API key")
-                else:
-                    # Initialize detector
-                    if st.session_state.detector is None:
-                        with st.spinner("Initializing detector..."):
-                            st.session_state.detector = initialize_detector()
+                # Initialize detector
+                if st.session_state.detector is None:
+                    with st.spinner("Initializing detector..."):
+                        st.session_state.detector = initialize_detector()
                     
-                    if st.session_state.detector:
-                        with st.spinner(f"Analyzing {max_reviews} reviews..."):
-                            try:
-                                review_texts = batch_df[text_column].head(max_reviews).tolist()
-                                results = st.session_state.detector.predict_batch(review_texts, max_reviews)
-                                
-                                # Create results dataframe
-                                results_df = pd.DataFrame([
-                                    {
-                                        'review': text,
-                                        'prediction': result.prediction,
-                                        'confidence': result.confidence,
-                                        'processing_time': result.processing_time
-                                    }
-                                    for text, result in zip(review_texts, results)
-                                ])
-                                
-                                # Display summary
-                                col1, col2, col3, col4 = st.columns(4)
-                                
-                                with col1:
-                                    fake_count = sum(1 for r in results if r.prediction.lower() == 'fake')
-                                    st.metric("Fake Reviews", fake_count)
-                                
-                                with col2:
-                                    real_count = len(results) - fake_count
-                                    st.metric("Real Reviews", real_count)
-                                
-                                with col3:
-                                    avg_confidence = np.mean([r.confidence for r in results])
-                                    st.metric("Avg Confidence", f"{avg_confidence:.1f}%")
-                                
-                                with col4:
-                                    total_time = sum(r.processing_time for r in results)
-                                    st.metric("Total Time", f"{total_time:.1f}s")
-                                
-                                # Results visualization
-                                col1, col2 = st.columns(2)
-                                
-                                with col1:
-                                    # Pie chart
-                                    fig_pie = px.pie(
-                                        values=[fake_count, real_count],
-                                        names=['Fake', 'Real'],
-                                        title="Prediction Distribution",
-                                        color_discrete_map={'Fake': '#ff4b4b', 'Real': '#00c851'}
-                                    )
-                                    st.plotly_chart(fig_pie, use_container_width=True)
-                                
-                                with col2:
-                                    # Confidence distribution
-                                    fig_hist = px.histogram(
-                                        results_df,
-                                        x='confidence',
-                                        color='prediction',
-                                        title="Confidence Distribution",
-                                        nbins=20,
-                                        color_discrete_map={'fake': '#ff4b4b', 'real': '#00c851'}
-                                    )
-                                    st.plotly_chart(fig_hist, use_container_width=True)
-                                
-                                # Detailed results table
-                                st.subheader("📊 Detailed Results")
-                                
-                                # Add styling to dataframe
-                                def style_prediction(val):
-                                    color = '#ff4b4b' if val.lower() == 'fake' else '#00c851'
-                                    return f'background-color: {color}; color: white; font-weight: bold;'
-                                
-                                styled_df = results_df.style.applymap(
-                                    style_prediction, subset=['prediction']
-                                ).format({
-                                    'confidence': '{:.1f}%',
-                                    'processing_time': '{:.2f}s'
-                                })
-                                
-                                st.dataframe(styled_df, use_container_width=True, height=400)
-                                
-                                # Download results
-                                csv_data = results_df.to_csv(index=False)
-                                st.download_button(
-                                    label="📥 Download Results",
-                                    data=csv_data,
-                                    file_name=f"review_analysis_results_{int(time.time())}.csv",
-                                    mime="text/csv"
+                if st.session_state.detector:
+                    with st.spinner(f"Analyzing {max_reviews} reviews..."):
+                        try:
+                            review_texts = batch_df[text_column].head(max_reviews).tolist()
+                            results = st.session_state.detector.predict_batch(review_texts, max_reviews)
+                            
+                            # Create results dataframe
+                            results_df = pd.DataFrame([
+                                {
+                                    'review': text,
+                                    'prediction': result.prediction,
+                                    'confidence': result.confidence,
+                                    'processing_time': result.processing_time
+                                }
+                                for text, result in zip(review_texts, results)
+                            ])
+                            
+                            # Display summary
+                            col1, col2, col3, col4 = st.columns(4)
+                            
+                            with col1:
+                                fake_count = sum(1 for r in results if r.prediction.lower() == 'fake')
+                                st.metric("Fake Reviews", fake_count)
+                            
+                            with col2:
+                                real_count = len(results) - fake_count
+                                st.metric("Real Reviews", real_count)
+                            
+                            with col3:
+                                avg_confidence = np.mean([r.confidence for r in results])
+                                st.metric("Avg Confidence", f"{avg_confidence:.1f}%")
+                            
+                            with col4:
+                                total_time = sum(r.processing_time for r in results)
+                                st.metric("Total Time", f"{total_time:.1f}s")
+                            
+                            # Results visualization
+                            col1, col2 = st.columns(2)
+                            
+                            with col1:
+                                # Pie chart
+                                fig_pie = px.pie(
+                                    values=[fake_count, real_count],
+                                    names=['Fake', 'Real'],
+                                    title="Prediction Distribution",
+                                    color_discrete_map={'Fake': '#ff4b4b', 'Real': '#00c851'}
                                 )
-                                
-                            except Exception as e:
-                                st.error(f"Batch analysis failed: {str(e)}")
+                                st.plotly_chart(fig_pie, use_container_width=True)
+                            
+                            with col2:
+                                # Confidence distribution
+                                fig_hist = px.histogram(
+                                    results_df,
+                                    x='confidence',
+                                    color='prediction',
+                                    title="Confidence Distribution",
+                                    nbins=20,
+                                    color_discrete_map={'fake': '#ff4b4b', 'real': '#00c851'}
+                                )
+                                st.plotly_chart(fig_hist, use_container_width=True)
+                            
+                            # Detailed results table
+                            st.subheader("📊 Detailed Results")
+                            
+                            # Add styling to dataframe
+                            def style_prediction(val):
+                                color = '#ff4b4b' if val.lower() == 'fake' else '#00c851'
+                                return f'background-color: {color}; color: white; font-weight: bold;'
+                            
+                            styled_df = results_df.style.applymap(
+                                style_prediction, subset=['prediction']
+                            ).format({
+                                'confidence': '{:.1f}%',
+                                'processing_time': '{:.2f}s'
+                            })
+                            
+                            st.dataframe(styled_df, use_container_width=True, height=400)
+                            
+                            # Download results
+                            csv_data = results_df.to_csv(index=False)
+                            st.download_button(
+                                label="📥 Download Results",
+                                data=csv_data,
+                                file_name=f"review_analysis_results_{int(time.time())}.csv",
+                                mime="text/csv"
+                            )
+                            
+                        except Exception as e:
+                            st.error(f"Batch analysis failed: {str(e)}")
         
         except Exception as e:
             st.error(f"Error reading file: {str(e)}")
@@ -476,34 +442,31 @@ with tab2:
                 "AMAZING AMAZING AMAZING!!! Everyone should buy this RIGHT NOW!!!"
             ]
             
-            if not api_key:
-                st.error("Please provide your Groq API key")
-            else:
-                if st.session_state.detector is None:
-                    with st.spinner("Initializing detector..."):
-                        st.session_state.detector = initialize_detector()
-                
-                if st.session_state.detector:
-                    with st.spinner("Analyzing sample reviews..."):
-                        try:
-                            results = st.session_state.detector.predict_batch(sample_data)
-                            
-                            for i, (review, result) in enumerate(zip(sample_data, results)):
-                                st.write(f"**Review {i+1}:** {review}")
-                                
-                                col1, col2 = st.columns([1, 3])
-                                with col1:
-                                    if result.prediction.lower() == 'fake':
-                                        st.error("🚨 FAKE")
-                                    else:
-                                        st.success("✅ REAL")
-                                with col2:
-                                    st.write(f"Confidence: {result.confidence:.1f}%")
-                                
-                                st.markdown("---")
+            if st.session_state.detector is None:
+                with st.spinner("Initializing detector..."):
+                    st.session_state.detector = initialize_detector()
+            
+            if st.session_state.detector:
+                with st.spinner("Analyzing sample reviews..."):
+                    try:
+                        results = st.session_state.detector.predict_batch(sample_data)
                         
-                        except Exception as e:
-                            st.error(f"Sample analysis failed: {str(e)}")
+                        for i, (review, result) in enumerate(zip(sample_data, results)):
+                            st.write(f"**Review {i+1}:** {review}")
+                            
+                            col1, col2 = st.columns([1, 3])
+                            with col1:
+                                if result.prediction.lower() == 'fake':
+                                    st.error("🚨 FAKE")
+                                else:
+                                    st.success("✅ REAL")
+                            with col2:
+                                st.write(f"Confidence: {result.confidence:.1f}%")
+                            
+                            st.markdown("---")
+                    
+                    except Exception as e:
+                        st.error(f"Sample analysis failed: {str(e)}")
 
 # Tab 3: Analytics
 with tab3:
@@ -657,7 +620,7 @@ with tab4:
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        api_status = "🟢 Connected" if st.session_state.api_status else "🔴 Not Connected"
+        api_status = "🟢 Connected"  # Assuming it's connected since key is hardcoded
         st.markdown(f"**API Status:** {api_status}")
     
     with col2:
